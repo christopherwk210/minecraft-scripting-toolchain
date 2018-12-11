@@ -8,7 +8,7 @@ class MinecraftModBuilder {
     constructor(modName) {
         this._modName = modName;
         this._destRoot = path.join(
-            process.env["LOCALAPPDATA"],
+            process.env["LOCALAPPDATA"] || '',
             "Packages/Microsoft.MinecraftUWP_8wekyb3d8bbwe/LocalState/games/com.mojang"
         );
 
