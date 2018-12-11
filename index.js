@@ -81,6 +81,16 @@ class MinecraftModBuilder {
         return mergeStreams(clientStream, serverStream);
     }
 
+    cleanSpareModules() {
+      let stream = src([
+        "*/*.js",
+        "!*/client.js",
+        "!*/server.js",
+      ], { cwd: path.join(this.outDir, "behaviors/scripts/") });
+
+      return stream.pipe(clean());
+    }
+
     behavior() {
         let stream = src("**/*", { cwd: this.behaviorDir });
         stream = augmentPipe(stream, this.behaviorTasks);
@@ -124,6 +134,10 @@ class MinecraftModBuilder {
             return builder.cleanOutDir();
         }
 
+        tasks.cleanSpareModules = function cleanSpareModules() {
+            return builder.cleanSpareModules();
+        }
+
         tasks.scripts = function buildScripts() {
             return builder.scripts();
         };
@@ -164,10 +178,11 @@ class MinecraftModBuilder {
             }
         );
 
-        tasks.build = series(
+        tasks.build = parallel(
             series(
                 tasks.scripts,
-                tasks.browserify
+                tasks.browserify,
+                tasks.cleanSpareModules
             ),
             tasks.behavior, 
             tasks.resources
