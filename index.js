@@ -3,6 +3,11 @@ const path = require("path");
 const fs = require("fs");
 const clean = require("gulp-clean");
 const del = require("del");
+const browserify = require('browserify');
+const buffer = require('gulp-buffer');
+const babelify = require("babelify");
+const source = require('vinyl-source-stream');
+const mergeStreams = require('merge-stream');
 
 class MinecraftModBuilder {
     constructor(modName) {
@@ -39,19 +44,51 @@ class MinecraftModBuilder {
     }
 
     scripts() {
-        let stream = src("*/*", {cwd: this.scriptsDir})
+        let stream = src("*/*", { cwd: this.scriptsDir });
         stream = augmentPipe(stream, this.scriptTasks);
         return stream.pipe(dest(path.join(this.outDir, "behaviors/scripts")));
     }
 
+    browserify() {
+        const outDir = this.outDir;
+
+        // Client
+        var clientBrowserify = browserify({
+            entries: path.join(outDir, "behaviors/scripts/client/client.js"),
+            debug: false
+        });
+
+        clientBrowserify.transform(babelify, { presets: ["@babel/preset-env"] });
+
+        const clientStream = clientBrowserify.bundle()
+            .pipe(source('client.js'))
+            .pipe(buffer())
+            .pipe(dest(path.join(outDir, "behaviors/scripts/client")));
+        
+        // Server
+        var serverBrowserify = browserify({
+            entries: path.join(outDir, "behaviors/scripts/server/server.js"),
+            debug: false
+        });
+
+        serverBrowserify.transform(babelify, { presets: ["@babel/preset-env"] });
+
+        const serverStream = serverBrowserify.bundle()
+            .pipe(source('server.js'))
+            .pipe(buffer())
+            .pipe(dest(path.join(outDir, "behaviors/scripts/server")));
+
+        return mergeStreams(clientStream, serverStream);
+    }
+
     behavior() {
-        let stream = src("**/*", { cwd: this.behaviorDir })
+        let stream = src("**/*", { cwd: this.behaviorDir });
         stream = augmentPipe(stream, this.behaviorTasks);
         return stream.pipe(dest(path.join(this.outDir, "behaviors")));
     }
 
     resources() {
-        let stream = src("**/*", { cwd: this.resourcesDir })
+        let stream = src("**/*", { cwd: this.resourcesDir });
         stream = augmentPipe(stream, this.resourcesTasks);
         return stream.pipe(dest(path.join(this.outDir, "resources")));
     }
@@ -62,7 +99,7 @@ class MinecraftModBuilder {
     }
 
     installBehavior() {
-        let stream = src("**/*", {cwd: path.join(this.outDir, "behaviors")})
+        let stream = src("**/*", {cwd: path.join(this.outDir, "behaviors")});
         stream = augmentPipe(stream, this.installBehaviorTasks);
         const destination = path.join(this._destRoot, "development_behavior_packs", this._modName);
         return stream.pipe(dest(destination));
@@ -74,7 +111,7 @@ class MinecraftModBuilder {
     }
 
     installResources() {
-        let stream = src("**/*", {cwd: path.join(this.outDir, "resources")})
+        let stream = src("**/*", {cwd: path.join(this.outDir, "resources")});
         stream = augmentPipe(stream, this.installResourcesTasks);
         return stream.pipe(dest(path.join(this._destRoot, "development_resource_packs", this._modName)));
     }
@@ -89,6 +126,10 @@ class MinecraftModBuilder {
 
         tasks.scripts = function buildScripts() {
             return builder.scripts();
+        };
+
+        tasks.browserify = function buildModules() {
+            return builder.browserify();
         };
 
         tasks.behavior = function buildBehavior() {
@@ -123,8 +164,11 @@ class MinecraftModBuilder {
             }
         );
 
-        tasks.build = parallel(
-            tasks.scripts, 
+        tasks.build = series(
+            series(
+                tasks.scripts,
+                tasks.browserify
+            ),
             tasks.behavior, 
             tasks.resources
         );
